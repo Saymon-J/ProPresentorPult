@@ -1,0 +1,4 @@
+.research/
+.playwright-mcp/
+node_modules/
+*.log

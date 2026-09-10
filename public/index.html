@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>ProPresenter Пульт</title>
+  <meta name="theme-color" content="#16181d">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="top">
+    <span id="dot" class="off" title="Соединение"></span>
+    <div id="presName">Подключение…</div>
+    <div id="slidePos"></div>
+  </header>
+
+  <main id="setupHint" hidden>
+    <p><b>Нет связи с ProPresenter.</b></p>
+    <ol>
+      <li>На ПК с ProPresenter: Настройки → Сеть → включи <b>Network</b> (API).</li>
+      <li>Запусти <code>node server.js</code> на том же ПК.</li>
+      <li>Открой этот адрес на телефоне ещё раз.</li>
+    </ol>
+    <p class="dim" id="errDetail"></p>
+  </main>
+
+  <main id="ui" hidden>
+    <section class="card" id="curCard">
+      <div class="cardLabel">Текущий · <span id="curGroup"></span></div>
+      <div class="thumb"><img id="curImg" alt="" draggable="false"></div>
+      <pre id="curText" class="slideText"></pre>
+    </section>
+
+    <section class="card next" id="nextCard">
+      <div class="cardLabel">Следующий</div>
+      <div class="thumb"><img id="nextImg" alt="" draggable="false"></div>
+      <pre id="nextText" class="slideText"></pre>
+    </section>
+
+    <div id="strip" aria-label="Все слайды"></div>
+
+    <div class="extraRow">
+      <button id="btnBlack" class="extra">✦ Затемнить экран</button>
+      <button id="btnClear" class="extra">✕ Очистить слайд</button>
+    </div>
+  </main>
+
+  <footer id="controls">
+    <button id="btnPrev">‹ Назад</button>
+    <button id="btnNext" class="primary">Вперёд ›</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
