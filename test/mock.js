@@ -30,6 +30,7 @@ function demoPresentation() {
     { name: 'Куплет 1', color: '#4c8dff', slides: ['Милость превыше суда\nБольше, чем я вижу', 'Ты держишь меня\nВ Твоих руках'] },
     { name: 'Припев', color: '#35d07f', slides: ['Святой, святой\nДостоин Агнец', 'Хвала Тебе\nВо веки веков'] },
     { name: 'Куплет 2', color: '#ff9f43', slides: ['Я прихожу\nТакой, как есть'] },
+    { name: 'Картинки', color: '#a06bff', slides: [''] }, // слайд без текста (только картинки)
   ];
   let i = 0;
   const out = [];
@@ -71,8 +72,9 @@ function startMock(port = 50001) {
     if (p === '/v1/presentation/active') return json(200, { presentation: state.cleared ? null : pres });
     if (p === '/v1/presentation/slide_index') return json(200, { presentation_index: null }); // как в P20
     if (p === '/v1/status/slide') return json(200, {
-      current: state.cleared ? { text: '', notes: '', uuid: '' }
-        : { text: flat[state.idx]?.text || '', notes: flat[state.idx]?.notes || '', uuid: '' },
+      current: state.cleared ? { text: '', notes: '', uuid: '' } : {
+        text: flat[state.idx]?.text || '', notes: flat[state.idx]?.notes || '', uuid: `S-${state.idx}`,
+      },
       next: { text: '', notes: '', uuid: '' }, // P20 здесь ничего не сообщает
     });
     if (p === '/v1/look/current') {

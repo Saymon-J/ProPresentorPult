@@ -14,6 +14,9 @@
 /* display:flex ниже перебивает UA-стиль [hidden], поэтому явно */
 [hidden] { display: none !important; }
 
+/* iOS Safari: без этого быстрый двойной тап по кнопке = зум, тап «теряется» */
+button { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+
 html, body { margin: 0; height: 100dvh; }
 
 body {

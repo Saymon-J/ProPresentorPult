@@ -54,7 +54,7 @@ const { startServer } = require('../server');
 
   // 8. активная презентация со слайдами и группами
   const act = JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/active')).body));
-  assert.equal(act.presentation.groups.length, 3);
+  assert.equal(act.presentation.groups.length, 4);
   assert.ok(act.presentation.groups[0].slides[0].text.length > 0);
 
   // 9. библиотеки: список и содержимое
@@ -110,7 +110,13 @@ const { startServer } = require('../server');
   layers = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/layers')).body));
   assert.equal(layers.media, true, 'повторный триггер возвращает фон');
 
-  console.log('SMOKE OK: 15/15 проверок прошли');
+  // 16. слайд без текста (только картинки): живой, uuid есть, текст пустой
+  await get('/pp/v1/presentation/DEMO-0000-0001/5/trigger');
+  cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.equal(cur.current.text, '');
+  assert.ok(cur.current.uuid.length > 0, 'uuid живого слайда без текста должен быть непустым');
+
+  console.log('SMOKE OK: 16/16 проверок прошли');
   mock.server.close(); srv.close();
   process.exit(0);
 })().catch((e) => { console.error('SMOKE FAIL:', e.message); process.exit(1); });

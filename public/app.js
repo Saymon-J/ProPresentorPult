@@ -19,7 +19,9 @@ const state = {
   idx: -1,         // индекс живого слайда в flat (по сопоставлению текста)
   liveText: '',    // текст живого слайда из status/slide
   liveNotes: '',
-  live: false,     // что-то в эфире (после «Очистить слайд» — false, колода остаётся)
+  prevLiveText: '',// текст до собственного переключения (защита от отката оптимистики)
+  lockUntil: 0,    // до этого момента игнорируем «старый» ответ опроса
+  live: false,     // что-то в эфире (слайд может быть и без текста — по картинкам)
   statusNext: '',  // «следующий» от ProPresenter, если он его знает
   screens: true,
   look: null,      // текущий вид: {id, screens:[{slide, media, props, ...}]}
@@ -50,8 +52,12 @@ async function loadActive() {
 }
 
 function matchIndex() {
-  if (!state.liveText || !state.pres) return -1;
-  return state.pres.flat.findIndex((s) => s.text === state.liveText);
+  const flat = state.pres?.flat || [];
+  const hits = flat.map((s, i) => (norm(s.text) === state.liveText ? i : -1)).filter((i) => i >= 0);
+  if (!hits.length) return -1;
+  if (state.idx < 0 || hits.length === 1) return hits[0];
+  // дубли текстов (припев) и пустые слайды-картинки: берём ближайший к текущей позиции
+  return hits.reduce((a, b) => (Math.abs(b - state.idx) < Math.abs(a - state.idx) ? b : a));
 }
 
 /* ── опрос живого слайда ───────────────────────────────── */
@@ -63,17 +69,20 @@ async function poll() {
     const st = await PP('/v1/status/slide');
     setOnline(true);
     const cur = st?.current || {};
-    const live = !!norm(cur.text);
+    // живой слайд узнаём по uuid: слайд может быть без текста (только картинки)
+    const live = !!(cur.uuid || norm(cur.text));
     if (live) {
-      if (norm(cur.text) !== state.liveText || norm(cur.notes) !== state.liveNotes) {
-        state.liveText = norm(cur.text);
+      const inc = norm(cur.text);
+      // сразу после своего переключения PP ещё отвечает старым — не откатываем оптимистику
+      const stale = Date.now() < state.lockUntil && inc === state.prevLiveText;
+      if (!stale && inc !== state.liveText) {
+        state.liveText = inc;
         state.liveNotes = norm(cur.notes);
         await loadActive();       // могла смениться колода
         state.idx = matchIndex();
       }
     } else if (state.live) {
       await loadActive();         // active мог стать null — колоду не теряем
-      // текст/индекс держим: оператор видит, где остановился
     }
     state.live = live;
     render();
@@ -110,6 +119,8 @@ function goto(i) {
   const n = state.pres?.flat.length || 0;
   if (i < 0 || i >= n) return;
   const s = state.pres.flat[i];        // оптимистично, подтвердит опрос
+  state.prevLiveText = state.liveText;
+  state.lockUntil = Date.now() + 2500;
   state.idx = i; state.live = true; state.liveText = s.text; state.liveNotes = s.notes;
   render();
   trig(`${i}/trigger`);
@@ -338,7 +349,9 @@ function setOnline(ok, err) {
   }
 }
 
-function renderCard(imgEl, textEl, uuid, i, pres, text, notes, group) {
+let lastRenderKey = '', lastStripKey = '';
+
+function renderCard(imgEl, textEl, uuid, i, pres, text, notes) {
   if (i >= 0 && pres) {
     imgEl.src = `/pp/v1/presentation/${uuid}/thumbnail/${i}?quality=640&thumbnail_type=jpeg`;
     imgEl.hidden = false;
@@ -348,48 +361,65 @@ function renderCard(imgEl, textEl, uuid, i, pres, text, notes, group) {
   }
   textEl.textContent = text || '';
   if (notes) textEl.append(`\n📝 ${notes}`);
-  return group;
 }
 
 function render() {
+  // перерисовка только по реальному изменению: постоянный ребилд ломал тапы на iPhone
+  const key = [state.pres?.uuid, state.pres?.flat.length || 0, state.idx, state.live,
+    state.liveText, state.statusNext, state.screens, state.ok].join('|');
+  if (key === lastRenderKey) return;
+  lastRenderKey = key;
+
   const pres = state.pres;
-  $('presName').textContent = pres ? pres.name : (state.liveText ? 'Презентация вне колоды' : 'Ничего не запущено');
+  $('presName').textContent = pres ? pres.name : (state.live ? 'Презентация вне колоды' : 'Ничего не запущено');
   const n = pres?.flat.length || 0;
   $('slidePos').textContent = n && state.idx >= 0 ? `${state.idx + 1} / ${n}` : '';
 
-  const live = state.liveText ? { text: state.liveText, notes: state.liveNotes } : null;
-  const curFlat = state.idx >= 0 ? pres.flat[state.idx] : null;
-  $('offAir').hidden = state.live || !live;
-  $('curCard').classList.toggle('offAir', !state.live && !!live);
+  const offAir = !state.live && !!pres;
+  $('offAir').hidden = !offAir;
+  $('curCard').classList.toggle('offAir', offAir);
+  const curFlat = state.idx >= 0 ? pres?.flat[state.idx] : null;
 
-  if (!live) {
-    renderCard($('curImg'), $('curText'), '', -1, null, '');
+  if (!pres && !state.live) {
     $('curGroup').textContent = '';
-    $('curText').textContent = pres ? 'Слайд не выбран — нажми «Вперёд» или тапни по ленте' : 'Запусти что-нибудь в ProPresenter';
-    // следующий при старте — первый слайд колоды
-    if (n) renderCard($('nextImg'), $('nextText'), pres.uuid, 0, pres, pres.flat[0].text, pres.flat[0].notes);
-    else renderCard($('nextImg'), $('nextText'), '', -1, null, '');
+    $('curImg').removeAttribute('src'); $('curImg').hidden = true;
+    $('curText').textContent = 'Запусти что-нибудь в ProPresenter';
+    $('nextImg').removeAttribute('src'); $('nextImg').hidden = true;
+    $('nextText').textContent = '';
+  } else if (!curFlat) {
+    $('curGroup').textContent = '';
+    $('curImg').removeAttribute('src'); $('curImg').hidden = true;
+    $('curText').textContent = state.live ? 'Слайд без текста' : 'Слайд не выбран — нажми «Вперёд» или тапни по ленте';
+    const nxt0 = pres?.flat[0];
+    if (!state.live && n) renderCard($('nextImg'), $('nextText'), pres.uuid, 0, pres, nxt0.text, nxt0.notes);
+    else { $('nextImg').removeAttribute('src'); $('nextImg').hidden = true; $('nextText').textContent = ''; }
   } else {
-    $('curGroup').textContent = curFlat?.group || '';
-    const g = renderCard($('curImg'), $('curText'),
-      pres?.uuid, state.idx, pres, live.text, live.notes, curFlat?.group);
-    const nxt = state.idx >= 0 ? pres?.flat[state.idx + 1] : null;
+    $('curGroup').textContent = curFlat.group || '';
+    renderCard($('curImg'), $('curText'), pres.uuid, state.idx, pres, curFlat.text, curFlat.notes);
+    const nxt = pres.flat[state.idx + 1];
     if (nxt) renderCard($('nextImg'), $('nextText'), pres.uuid, state.idx + 1, pres, nxt.text, nxt.notes);
-    else if (state.statusNext) renderCard($('nextImg'), $('nextText'), '', -1, null, state.statusNext);
-    else renderCard($('nextImg'), $('nextText'), '', -1, null, n && state.idx === n - 1 ? '— конец —' : '');
+    else if (state.statusNext) renderCard($('nextImg'), $('nextText'), '', -1, null, state.statusNext, '');
+    else renderCard($('nextImg'), $('nextText'), '', -1, null,
+      state.idx === n - 1 ? '— конец —' : '', '');
   }
 
   const strip = $('strip');
-  strip.replaceChildren(...(pres ? pres.flat : []).map((s, i) => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (i === state.idx ? ' now' : '');
-    b.style.setProperty('--gc', s.color);
-    b.innerHTML = `${i + 1}<span class="g"></span>`;
-    b.querySelector('.g').textContent = s.group;
-    b.onclick = () => goto(i);
-    return b;
-  }));
-  strip.querySelector('.now')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  const stripKey = `${pres?.uuid}:${n}:${state.idx}`;
+  if (stripKey !== lastStripKey) {
+    lastStripKey = stripKey;
+    strip.replaceChildren(...(pres ? pres.flat : []).map((s, i) => {
+      const b = document.createElement('button');
+      b.className = 'chip' + (i === state.idx ? ' now' : '');
+      b.style.setProperty('--gc', s.color);
+      b.innerHTML = `${i + 1}<span class="g"></span>`;
+      b.querySelector('.g').textContent = s.group;
+      b.onclick = () => goto(i);
+      return b;
+    }));
+    // центрируем вручную только саму ленту: scrollIntoView на iOS дёргает всю страницу
+    const now = strip.querySelector('.now');
+    if (now) strip.scrollTo({ left: now.offsetLeft - strip.clientWidth / 2 + now.offsetWidth / 2, behavior: 'smooth' });
+  }
   setOnline(state.ok);
 }
 
