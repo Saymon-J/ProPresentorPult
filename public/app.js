@@ -1,5 +1,8 @@
 // Пульт ProPresenter — клиент.
 // Все запросы идут через локальный мост (server.js): /pp/* → API ProPresenter.
+// Источник правды о живом слайде — /v1/status/slide (в ProPresenter 20
+// /v1/presentation/slide_index всегда отдаёт null). Индекс текущего слайда
+// вычисляется сопоставлением текста со слайдами активной презентации.
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -8,10 +11,15 @@ const PP = (p) => fetch('/pp' + p).then(async (r) => {
   const t = r.headers.get('content-type') || '';
   return t.includes('json') ? r.json() : r.text();
 });
+// в колоде переводы строк бывают "\r" или "\r\n", в status/slide — "\r\n"; приводим к "\n"
+const norm = (s) => (s || '').replace(/\r\n?/g, '\n');
 
 const state = {
-  pres: null,   // {uuid, name, flat:[{i, group, color, text, notes, enabled}]}
-  idx: -1,
+  pres: null,      // {uuid, name, flat:[{group, color, text, notes}]}
+  idx: -1,         // индекс живого слайда в flat (по сопоставлению текста)
+  liveText: '',    // текст живого слайда из status/slide
+  liveNotes: '',
+  statusNext: '',  // «следующий» от ProPresenter, если он его знает
   screens: true,
   ok: false,
 };
@@ -22,50 +30,54 @@ async function loadActive() {
   let body;
   try {
     body = await PP('/v1/presentation/active');
-  } catch {
-    state.pres = null;
-    render();
-    return;
-  }
+  } catch { return; }
   const p = body.presentation;
-  if (!p) { state.pres = null; render(); return; } // ничего не открыто/запущено
+  if (!p) { state.pres = null; state.idx = -1; return; }
   const uuid = p.id?.uuid || p.uuid || '';
-  if (state.pres?.uuid === uuid) { render(); return; } // не перезагружаем лишний раз
   const flat = [];
   (p.groups || []).forEach((g) => {
     (g.slides || []).forEach((s) => flat.push({
       group: g.name || '', color: g.color || '#555',
-      text: s.text || '', notes: s.notes || '', enabled: s.enabled !== false,
+      text: norm(s.text), notes: norm(s.notes),
     }));
   });
-  state.pres = { uuid, name: p.id?.name || p.name || 'Без названия', flat };
-  render();
+  if (state.pres?.uuid !== uuid || state.pres?.flat.length !== flat.length) {
+    state.pres = { uuid, name: p.id?.name || p.name || 'Без названия', flat };
+  }
+  state.idx = matchIndex();
 }
 
-/* ── опрос текущего индекса ────────────────────────────── */
+function matchIndex() {
+  if (!state.liveText || !state.pres) return -1;
+  return state.pres.flat.findIndex((s) => s.text === state.liveText);
+}
+
+/* ── опрос живого слайда ───────────────────────────────── */
 
 let pollTimer = null, tick = 0;
 
 async function poll() {
   try {
-    // P20 отдаёт null, когда ни один слайд не запущен — приводим к -1
-    const raw = (await PP('/v1/presentation/slide_index')).presentation_index;
-    const i = Number.isInteger(raw) ? raw : -1;
+    const st = await PP('/v1/status/slide');
     setOnline(true);
-    if (i !== state.idx) {
-      state.idx = i;
-      if (!state.pres) await loadActive(); else render();
+    const cur = st?.current || {};
+    if (norm(cur.text) !== state.liveText || norm(cur.notes) !== state.liveNotes) {
+      state.liveText = norm(cur.text);
+      state.liveNotes = norm(cur.notes);
+      await loadActive();       // могла смениться колода
+      state.idx = matchIndex();
+      render();
     }
-    if (++tick % 4 === 0) { // реже: состояние экранов + смена/открытие презентации
+    state.statusNext = norm(st?.next?.text || '');
+    if (++tick % 4 === 0) {     // реже: экраны + обновление колоды
       state.screens = await PP('/v1/status/audience_screens');
       renderScreens();
-      await loadActive(); // внутри есть проверка по uuid — лишней перезагрузки нет
+      await loadActive();
+      state.idx = matchIndex();
+      render();
     }
   } catch (e) {
-    if (String(e).includes('404')) { // ничего не запущено
-      setOnline(true);
-      if (state.idx !== -1 || state.pres) { state.idx = -1; state.pres = null; render(); }
-    } else setOnline(false, e);
+    setOnline(false, e);
   }
 }
 
@@ -81,13 +93,27 @@ const trig = (path) => PP(`/v1/presentation/active/${path}`).then(poll)
   .catch((e) => { if (!String(e).includes('404')) setOnline(false, e); });
 
 function goto(i) {
-  if (i < 0 || i >= (state.pres?.flat.length || 0)) return;
-  state.idx = i; render(); // оптимистично, подтвердит опрос
+  const n = state.pres?.flat.length || 0;
+  if (i < 0 || i >= n) return;
+  const s = state.pres.flat[i];        // оптимистично, подтвердит опрос
+  state.idx = i; state.liveText = s.text; state.liveNotes = s.notes;
+  render();
   trig(`${i}/trigger`);
 }
 
-$('btnNext').onclick = () => goto(state.idx < 0 ? 0 : state.idx + 1);
-$('btnPrev').onclick = () => goto(state.idx - 1) ?? null;
+function next() {
+  const n = state.pres?.flat.length || 0;
+  if (state.idx >= 0 && state.idx < n - 1) return goto(state.idx + 1);
+  if (state.idx < 0) return trig('next/trigger'); // живого нет/не сопоставился — просто «дальше»
+}
+
+function prev() {
+  if (state.idx > 0) return goto(state.idx - 1);
+  if (state.idx < 0) return trig('previous/trigger');
+}
+
+$('btnNext').onclick = next;
+$('btnPrev').onclick = prev;
 
 $('btnBlack').onclick = () => {
   const to = !state.screens;
@@ -97,7 +123,7 @@ $('btnBlack').onclick = () => {
   }).catch((e) => setOnline(false, e));
 };
 
-$('btnClear').onclick = () => PP('/v1/clear/layer/slide').catch((e) => setOnline(false, e));
+$('btnClear').onclick = () => PP('/v1/clear/layer/slide').then(poll).catch((e) => setOnline(false, e));
 
 /* ── отрисовка ─────────────────────────────────────────── */
 
@@ -108,58 +134,55 @@ function setOnline(ok, err) {
     $('ui').hidden = true;
     $('setupHint').hidden = false;
     $('errDetail').textContent = String(err.message || err).slice(0, 200);
-  } else if (state.pres || state.idx >= 0) {
+  } else if (state.pres || state.liveText) {
     $('setupHint').hidden = true;
     $('ui').hidden = false;
   }
 }
 
+function renderCard(imgEl, textEl, uuid, i, pres, text, notes, group) {
+  if (i >= 0 && pres) {
+    imgEl.src = `/pp/v1/presentation/${uuid}/thumbnail/${i}?quality=640&thumbnail_type=jpeg`;
+    imgEl.hidden = false;
+    imgEl.onerror = () => { imgEl.hidden = true; };
+  } else {
+    imgEl.removeAttribute('src'); imgEl.hidden = true;
+  }
+  textEl.textContent = text || '';
+  if (notes) textEl.append(`\n📝 ${notes}`);
+  return group;
+}
+
 function render() {
   const pres = state.pres;
-  $('presName').textContent = pres ? pres.name : 'Ничего не запущено';
+  $('presName').textContent = pres ? pres.name : (state.liveText ? 'Презентация вне колоды' : 'Ничего не запущено');
   const n = pres?.flat.length || 0;
   $('slidePos').textContent = n && state.idx >= 0 ? `${state.idx + 1} / ${n}` : '';
-  if (!pres) {
+
+  const live = state.liveText ? { text: state.liveText, notes: state.liveNotes } : null;
+  const curFlat = state.idx >= 0 ? pres.flat[state.idx] : null;
+
+  if (!live) {
+    renderCard($('curImg'), $('curText'), '', -1, null, '');
     $('curGroup').textContent = '';
-    $('curImg').removeAttribute('src'); $('curImg').hidden = true;
-    $('curText').textContent = '';
-    $('nextImg').removeAttribute('src'); $('nextImg').hidden = true;
-    $('nextText').textContent = '';
-    $('strip').replaceChildren();
-    setOnline(state.ok);
-    return;
-  }
-
-  const cur = state.idx >= 0 ? pres.flat[state.idx] : null;
-  const next = pres.flat[state.idx + 1]; // при idx=-1 это первый слайд — его и запустит «Вперёд»
-  $('curGroup').textContent = cur?.group || '';
-  const curImg = $('curImg');
-  if (cur) {
-    curImg.src = `/pp/v1/presentation/${pres.uuid}/thumbnail/${state.idx}?quality=640&thumbnail_type=jpeg`;
-    curImg.hidden = false;
-    curImg.onerror = () => { curImg.hidden = true; };
-    $('curText').textContent = cur.text;
-    $('curText').append(cur.notes ? `\n📝 ${cur.notes}` : '');
+    $('curText').textContent = pres ? 'Слайд не выбран — нажми «Вперёд» или тапни по ленте' : 'Запусти что-нибудь в ProPresenter';
+    // следующий при старте — первый слайд колоды
+    if (n) renderCard($('nextImg'), $('nextText'), pres.uuid, 0, pres, pres.flat[0].text, pres.flat[0].notes);
+    else renderCard($('nextImg'), $('nextText'), '', -1, null, '');
   } else {
-    curImg.removeAttribute('src'); curImg.hidden = true;
-    $('curText').textContent = 'Слайд не выбран — нажми «Вперёд» или тапни по ленте';
-  }
-
-  const nextImg = $('nextImg');
-  if (next) {
-    nextImg.src = `/pp/v1/presentation/${pres.uuid}/thumbnail/${state.idx + 1}?quality=384&thumbnail_type=jpeg`;
-    nextImg.hidden = false;
-    nextImg.onerror = () => { nextImg.hidden = true; };
-    $('nextText').textContent = next.text;
-  } else {
-    nextImg.removeAttribute('src'); nextImg.hidden = true;
-    $('nextText').textContent = '— конец —';
+    $('curGroup').textContent = curFlat?.group || '';
+    const g = renderCard($('curImg'), $('curText'),
+      pres?.uuid, state.idx, pres, live.text, live.notes, curFlat?.group);
+    const nxt = state.idx >= 0 ? pres?.flat[state.idx + 1] : null;
+    if (nxt) renderCard($('nextImg'), $('nextText'), pres.uuid, state.idx + 1, pres, nxt.text, nxt.notes);
+    else if (state.statusNext) renderCard($('nextImg'), $('nextText'), '', -1, null, state.statusNext);
+    else renderCard($('nextImg'), $('nextText'), '', -1, null, n && state.idx === n - 1 ? '— конец —' : '');
   }
 
   const strip = $('strip');
-  strip.replaceChildren(...pres.flat.map((s, i) => {
+  strip.replaceChildren(...(pres ? pres.flat : []).map((s, i) => {
     const b = document.createElement('button');
-    b.className = 'chip' + (i === state.idx ? ' now' : '') + (s.enabled ? '' : ' disabled');
+    b.className = 'chip' + (i === state.idx ? ' now' : '');
     b.style.setProperty('--gc', s.color);
     b.innerHTML = `${i + 1}<span class="g"></span>`;
     b.querySelector('.g').textContent = s.group;

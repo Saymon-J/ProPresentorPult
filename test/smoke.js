@@ -1,13 +1,13 @@
 // Smoke-тест: поднимает мок ProPresenter + мост и проверяет сценарий пульта.
 // Запуск: node test/smoke.js  (код выхода 0 — всё ок)
 'use strict';
+process.env.PP_PORT = '50999'; // свой порт, чтобы тест не задевал живой ProPresenter на 50001
 const assert = require('assert');
 const { startMock } = require('./mock');
 const { startServer } = require('../server');
 
 (async () => {
-  // мок на 50001 — мост ищет API на портах 50001/1025 по умолчанию
-  const mock = await startMock(50001);
+  const mock = await startMock(50999);
   const srv = await startServer(0);
   const base = `http://127.0.0.1:${srv.address().port}`;
   const get = async (p, opts) => {
@@ -24,21 +24,24 @@ const { startServer } = require('../server');
   const ver = JSON.parse(new TextDecoder().decode((await get('/pp/version')).body));
   assert.equal(ver.api_version, 'v1');
 
-  // 3. индекс слайда
-  const idx0 = await get('/pp/v1/presentation/slide_index');
-  assert.equal(idx0.status, 200);
-  assert.equal(JSON.parse(new TextDecoder().decode(idx0.body)).presentation_index, 0);
+  // 3. живой слайд до переключений (правда в P20 — status/slide, slide_index там null)
+  const cur0 = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.ok(cur0.current.text.length > 0, 'текущий слайд должен иметь текст');
+  const idxNull = JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/slide_index')).body));
+  assert.equal(idxNull.presentation_index, null);
 
   // 4. переключение вперёд через прокси
   assert.equal((await get('/pp/v1/presentation/active/next/trigger')).status, 204);
-  const idx1 = JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/slide_index')).body));
-  assert.equal(idx1.presentation_index, 1, 'после next индекс должен стать 1');
+  const cur1 = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.notEqual(cur1.current.text, cur0.current.text, 'после next текст живого слайда должен смениться');
 
   // 5. прямой переход на слайд и назад
   await get('/pp/v1/presentation/active/4/trigger');
-  assert.equal(JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/slide_index')).body)).presentation_index, 4);
+  let cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.equal(cur.current.text, 'Я прихожу\nТакой, как есть');
   await get('/pp/v1/presentation/active/previous/trigger');
-  assert.equal(JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/slide_index')).body)).presentation_index, 3);
+  cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.equal(cur.current.text, 'Хвала Тебе\nВо веки веков');
 
   // 6. миниатюра слайда — бинарный образ через прокси
   const th = await get('/pp/v1/presentation/DEMO-0000-0001/thumbnail/2?quality=320&thumbnail_type=jpeg');

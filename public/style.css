@@ -132,7 +132,6 @@ body {
   background: var(--gc, #555);
 }
 .chip.now { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
-.chip.disabled { opacity: .35; }
 
 /* ── доп. кнопки ───────────────────────── */
 .extraRow { display: flex; gap: 8px; flex: none; padding-bottom: 4px; }

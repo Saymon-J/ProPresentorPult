@@ -61,10 +61,10 @@ function startMock(port = 50001) {
       host_description: 'Mock 8.0', api_version: 'v1',
     });
     if (p === '/v1/presentation/active') return json(200, { presentation: pres });
-    if (p === '/v1/presentation/slide_index') return json(200, { presentation_index: state.idx });
+    if (p === '/v1/presentation/slide_index') return json(200, { presentation_index: null }); // как в P20
     if (p === '/v1/status/slide') return json(200, {
-      current: flat[state.idx] || {},
-      next: flat[state.idx + 1] || {},
+      current: { text: flat[state.idx]?.text || '', notes: flat[state.idx]?.notes || '', uuid: '' },
+      next: { text: '', notes: '', uuid: '' }, // P20 здесь ничего не сообщает
     });
     if (p === '/v1/status/audience_screens') {
       if (req.method === 'PUT') {
