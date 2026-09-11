@@ -1,7 +1,7 @@
 // Кэш оболочки пульта, чтобы открывался мгновенно и работал офлайн-каркас.
 const SHELL = new Set(['/', '/index.html', '/style.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png']);
-const CACHE = 'pult-v5';
+const CACHE = 'pult-v6';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open('pult-v1').then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

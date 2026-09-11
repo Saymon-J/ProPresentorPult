@@ -75,7 +75,30 @@ const { startServer } = require('../server');
   assert.equal(plItems.items[0].target_uuid, 'DEMO-0000-0001');
   assert.equal((await get('/pp/v1/playlist/PL-1/0/trigger')).status, 204);
 
-  console.log('SMOKE OK: 11/11 проверок прошли');
+  // 12. очистка слайда: эфир пуст, active сбрасывается — но колода в пульте остаётся
+  assert.equal((await get('/pp/v1/clear/layer/slide')).status, 204);
+  cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.equal(cur.current.text, '');
+  const actAfterClear = JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/active')).body));
+  assert.equal(actAfterClear.presentation, null);
+
+  // 13. триггер по UUID колоды возвращает всё на место
+  assert.equal((await get('/pp/v1/presentation/DEMO-0000-0001/2/trigger')).status, 204);
+  cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.ok(cur.current.text.length > 0, 'после триггера по uuid текст должен вернуться');
+  const actAfterTrig = JSON.parse(new TextDecoder().decode((await get('/pp/v1/presentation/active')).body));
+  assert.equal(actAfterTrig.presentation.id.uuid, 'DEMO-0000-0001');
+
+  // 14. слои: PUT вида переключает флаги
+  const look = JSON.parse(new TextDecoder().decode((await get('/pp/v1/look/current')).body));
+  look.screens.forEach((s) => { s.slide = false; });
+  await get('/pp/v1/look/current', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(look) });
+  let look2 = JSON.parse(new TextDecoder().decode((await get('/pp/v1/look/current')).body));
+  assert.equal(look2.screens[0].slide, false);
+  look2.screens.forEach((s) => { s.slide = true; });
+  await get('/pp/v1/look/current', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(look2) });
+
+  console.log('SMOKE OK: 14/14 проверок прошли');
   mock.server.close(); srv.close();
   process.exit(0);
 })().catch((e) => { console.error('SMOKE FAIL:', e.message); process.exit(1); });

@@ -44,7 +44,9 @@ function demoPresentation() {
 }
 
 function startMock(port = 50001) {
-  const state = { idx: 0, screens: true };
+  const state = { idx: 0, screens: true, cleared: false,
+    look: { id: { uuid: 'LOOK-1', name: 'По умолчанию', index: 0 },
+      screens: [{ video_input: true, media: true, slide: true, announcements: true, props: true, messages: true, presentation: '', mask: '' }] } };
   const pres = {
     uuid: 'DEMO-0000-0001', id: { uuid: 'DEMO-0000-0001', name: 'Демо-песня', index: 0 },
     name: 'Демо-песня', groups: demoPresentation(), has_timeline: false, destination: 'presentation',
@@ -66,12 +68,21 @@ function startMock(port = 50001) {
       name: 'Мок ProPresenter', platform: 'win', os_version: 'mock',
       host_description: 'Mock 8.0', api_version: 'v1',
     });
-    if (p === '/v1/presentation/active') return json(200, { presentation: pres });
+    if (p === '/v1/presentation/active') return json(200, { presentation: state.cleared ? null : pres });
     if (p === '/v1/presentation/slide_index') return json(200, { presentation_index: null }); // как в P20
     if (p === '/v1/status/slide') return json(200, {
-      current: { text: flat[state.idx]?.text || '', notes: flat[state.idx]?.notes || '', uuid: '' },
+      current: state.cleared ? { text: '', notes: '', uuid: '' }
+        : { text: flat[state.idx]?.text || '', notes: flat[state.idx]?.notes || '', uuid: '' },
       next: { text: '', notes: '', uuid: '' }, // P20 здесь ничего не сообщает
     });
+    if (p === '/v1/look/current') {
+      if (req.method === 'PUT') {
+        let b = ''; req.on('data', (c) => b += c);
+        return req.on('end', () => { state.look = JSON.parse(b); res.writeHead(204); res.end(); });
+      }
+      return json(200, state.look);
+    }
+    if (p === '/v1/looks') return json(200, []);
     if (p === '/v1/status/audience_screens') {
       if (req.method === 'PUT') {
         let b = ''; req.on('data', (c) => b += c);
@@ -79,9 +90,10 @@ function startMock(port = 50001) {
       }
       return json(200, state.screens);
     }
-    if (p === '/v1/clear/layer/slide') { res.writeHead(204); return res.end(); }
+    if (p === '/v1/clear/layer/slide') { state.cleared = true; res.writeHead(204); return res.end(); }
 
     let m;
+    const unClear = () => { state.cleared = false; };
     if (p === '/v1/libraries') return json(200, LIBS);
     if (p === '/v1/playlists') return json(200, PLAYLISTS);
     if ((m = p.match(/^\/v1\/library\/([^/]+)$/))) {
@@ -94,17 +106,27 @@ function startMock(port = 50001) {
       });
     }
     if ((m = p.match(/^\/v1\/library\/([^/]+)\/([^/]+)\/trigger$/))) {
-      state.idx = 0; res.writeHead(204); return res.end();
+      unClear(); state.idx = 0; res.writeHead(204); return res.end();
     }
     if ((m = p.match(/^\/v1\/playlist\/([^/]+)\/(\d+)\/trigger$/))) {
-      state.idx = 0; res.writeHead(204); return res.end();
+      unClear(); state.idx = 0; res.writeHead(204); return res.end();
     }
-    if (p === '/v1/presentation/active/next/trigger') { state.idx = Math.min(state.idx + 1, flat.length - 1); res.writeHead(204); return res.end(); }
-    if (p === '/v1/presentation/active/previous/trigger') { state.idx = Math.max(state.idx - 1, 0); res.writeHead(204); return res.end(); }
+    if (p === '/v1/presentation/active/next/trigger') { unClear(); state.idx = Math.min(state.idx + 1, flat.length - 1); res.writeHead(204); return res.end(); }
+    if (p === '/v1/presentation/active/previous/trigger') { unClear(); state.idx = Math.max(state.idx - 1, 0); res.writeHead(204); return res.end(); }
     if ((m = p.match(/^\/v1\/presentation\/active\/(\d+)\/trigger$/))) {
       const i = Number(m[1]);
       if (i >= flat.length) return json(404, { error: 'no slide' });
-      state.idx = i; res.writeHead(204); return res.end();
+      unClear(); state.idx = i; res.writeHead(204); return res.end();
+    }
+    if ((m = p.match(/^\/v1\/presentation\/([^/]+)\/(next|previous)\/trigger$/))) {
+      unClear();
+      state.idx = m[2] === 'next' ? Math.min(state.idx + 1, flat.length - 1) : Math.max(state.idx - 1, 0);
+      res.writeHead(204); return res.end();
+    }
+    if ((m = p.match(/^\/v1\/presentation\/([^/]+)\/(\d+)\/trigger$/))) {
+      const i = Number(m[2]);
+      if (i >= flat.length) return json(404, { error: 'no slide' });
+      unClear(); state.idx = i; res.writeHead(204); return res.end();
     }
     if ((m = p.match(/^\/v1\/presentation\/([^/]+)\/thumbnail\/(\d+)$/))) {
       const i = Number(m[2]);

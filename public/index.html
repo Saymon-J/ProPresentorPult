@@ -33,7 +33,7 @@
 
   <main id="ui" hidden>
     <section class="card" id="curCard">
-      <div class="cardLabel">Текущий · <span id="curGroup"></span></div>
+      <div class="cardLabel">Текущий · <span id="curGroup"></span><span id="offAir" class="badge" hidden>⏸ вне эфира</span></div>
       <div class="thumb"><img id="curImg" alt="" draggable="false"></div>
       <pre id="curText" class="slideText"></pre>
     </section>
@@ -48,6 +48,7 @@
 
     <div class="extraRow">
       <button id="btnBlack" class="extra">✦ Затемнить экран</button>
+      <button id="btnLayers" class="extra">☰ Слои</button>
       <button id="btnClear" class="extra">✕ Очистить слайд</button>
     </div>
   </main>
@@ -68,6 +69,14 @@
       <button id="tabPl">Плейлисты</button>
     </div>
     <div id="pkList"><div class="pkEmpty">Загрузка…</div></div>
+  </div>
+
+  <div id="layers" hidden>
+    <div class="pkHead">
+      <div>Слои и зал</div>
+      <button id="lyClose">✕</button>
+    </div>
+    <div id="lyList"><div class="pkEmpty">Загрузка…</div></div>
   </div>
 
   <script src="app.js"></script>

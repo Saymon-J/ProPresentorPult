@@ -19,8 +19,10 @@ const state = {
   idx: -1,         // индекс живого слайда в flat (по сопоставлению текста)
   liveText: '',    // текст живого слайда из status/slide
   liveNotes: '',
+  live: false,     // что-то в эфире (после «Очистить слайд» — false, колода остаётся)
   statusNext: '',  // «следующий» от ProPresenter, если он его знает
   screens: true,
+  look: null,      // текущий вид: {id, screens:[{slide, media, props, ...}]}
   ok: false,
 };
 
@@ -32,7 +34,7 @@ async function loadActive() {
     body = await PP('/v1/presentation/active');
   } catch { return; }
   const p = body.presentation;
-  if (!p) { state.pres = null; state.idx = -1; return; }
+  if (!p) return; // «Очистить слайд» обнуляет active — последнюю колоду держим
   const uuid = p.id?.uuid || p.uuid || '';
   const flat = [];
   (p.groups || []).forEach((g) => {
@@ -61,19 +63,27 @@ async function poll() {
     const st = await PP('/v1/status/slide');
     setOnline(true);
     const cur = st?.current || {};
-    if (norm(cur.text) !== state.liveText || norm(cur.notes) !== state.liveNotes) {
-      state.liveText = norm(cur.text);
-      state.liveNotes = norm(cur.notes);
-      await loadActive();       // могла смениться колода
-      state.idx = matchIndex();
-      render();
+    const live = !!norm(cur.text);
+    if (live) {
+      if (norm(cur.text) !== state.liveText || norm(cur.notes) !== state.liveNotes) {
+        state.liveText = norm(cur.text);
+        state.liveNotes = norm(cur.notes);
+        await loadActive();       // могла смениться колода
+        state.idx = matchIndex();
+      }
+    } else if (state.live) {
+      await loadActive();         // active мог стать null — колоду не теряем
+      // текст/индекс держим: оператор видит, где остановился
     }
+    state.live = live;
+    render();
     state.statusNext = norm(st?.next?.text || '');
     if (++tick % 4 === 0) {     // реже: экраны + обновление колоды
       state.screens = await PP('/v1/status/audience_screens');
       renderScreens();
       await loadActive();
-      state.idx = matchIndex();
+      if (state.live) state.idx = matchIndex();
+      if (!$('layers').hidden) await refreshLook();
       render();
     }
   } catch (e) {
@@ -88,15 +98,19 @@ function startPolling() {
 
 /* ── действия ──────────────────────────────────────────── */
 
-// 404 от триггера — «нечего запускать», не авария связи; остальное зажигаем красным
-const trig = (path) => PP(`/v1/presentation/active/${path}`).then(poll)
-  .catch((e) => { if (!String(e).includes('404')) setOnline(false, e); });
+// Триггеры по UUID колоды: работают и когда active сброшен очисткой слайда.
+// 404 от триггера — «нечего запускать», не авария связи; остальное зажигаем красным.
+const trig = (path) => {
+  const base = state.pres ? `/v1/presentation/${state.pres.uuid}` : '/v1/presentation/active';
+  return PP(`${base}/${path}`).then(poll)
+    .catch((e) => { if (!String(e).includes('404')) setOnline(false, e); });
+};
 
 function goto(i) {
   const n = state.pres?.flat.length || 0;
   if (i < 0 || i >= n) return;
   const s = state.pres.flat[i];        // оптимистично, подтвердит опрос
-  state.idx = i; state.liveText = s.text; state.liveNotes = s.notes;
+  state.idx = i; state.live = true; state.liveText = s.text; state.liveNotes = s.notes;
   render();
   trig(`${i}/trigger`);
 }
@@ -124,6 +138,84 @@ $('btnBlack').onclick = () => {
 };
 
 $('btnClear').onclick = () => PP('/v1/clear/layer/slide').then(poll).catch((e) => setOnline(false, e));
+
+/* ── слои и зал ────────────────────────────────────────── */
+
+const LAYERS = [
+  ['slide', 'Слайд (текст)'],
+  ['media', 'Фон / видео'],
+  ['props', 'Пропсы'],
+  ['announcements', 'Объявления'],
+  ['messages', 'Сообщения'],
+  ['video_input', 'Видеовход'],
+];
+
+async function refreshLook() {
+  try { state.look = await PP('/v1/look/current'); } catch { state.look = null; }
+}
+
+async function setLayer(key, on) {
+  if (!state.look) return;
+  const look = JSON.parse(JSON.stringify(state.look));
+  look.screens.forEach((s) => { s[key] = on; });
+  state.look = look;
+  renderLayers(); // оптимистично: GET /look/current в P20 запаздывает, тумблер отражает действие
+  try {
+    await fetch('/pp/v1/look/current', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(look),
+    });
+  } catch (e) { setOnline(false, e); }
+}
+
+async function renderLayers() {
+  const list = $('lyList');
+  list.replaceChildren();
+  if (!state.look) {
+    list.innerHTML = '<div class="pkEmpty">Слои недоступны</div>';
+    return;
+  }
+  for (const [key, label] of LAYERS) {
+    const on = state.look.screens.length
+      && state.look.screens.every((s) => s[key] !== false);
+    const row = document.createElement('div');
+    row.className = 'lyRow';
+    row.innerHTML = `<span></span><button class="lyToggle"></button>`;
+    row.querySelector('span').textContent = label;
+    const btn = row.querySelector('button');
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? 'вкл' : 'выкл';
+    btn.onclick = () => setLayer(key, !on);
+    list.append(row);
+  }
+  // настроенные виды (залы): создаются в ProPresenter, переключаются отсюда
+  try {
+    const looks = await PP('/v1/looks');
+    if (looks.length) {
+      const head = document.createElement('div');
+      head.className = 'pkGroup';
+      head.textContent = 'Виды (залы)';
+      list.append(head);
+      for (const lk of looks) {
+        const b = document.createElement('button');
+        b.className = 'lyTrigger' + (lk.id === state.look?.id ? ' now' : '');
+        b.textContent = lk.name;
+        b.onclick = async () => {
+          try { await PP(`/v1/look/${lk.id}/trigger`); } catch (e) { setOnline(false, e); }
+          await refreshLook();
+          renderLayers();
+        };
+        list.append(b);
+      }
+    }
+  } catch { /* видов нет — не страшно */ }
+}
+
+$('btnLayers').onclick = async () => {
+  $('layers').hidden = false;
+  await refreshLook();
+  renderLayers();
+};
+$('lyClose').onclick = () => { $('layers').hidden = true; };
 
 /* ── выбор презентации: библиотеки и плейлисты ─────────── */
 
@@ -263,6 +355,8 @@ function render() {
 
   const live = state.liveText ? { text: state.liveText, notes: state.liveNotes } : null;
   const curFlat = state.idx >= 0 ? pres.flat[state.idx] : null;
+  $('offAir').hidden = state.live || !live;
+  $('curCard').classList.toggle('offAir', !state.live && !!live);
 
   if (!live) {
     renderCard($('curImg'), $('curText'), '', -1, null, '');
