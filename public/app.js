@@ -27,7 +27,8 @@ async function loadActive() {
     render();
     return;
   }
-  const p = body.presentation || {};
+  const p = body.presentation;
+  if (!p) { state.pres = null; render(); return; } // ничего не открыто/запущено
   const uuid = p.id?.uuid || p.uuid || '';
   if (state.pres?.uuid === uuid) { render(); return; } // не перезагружаем лишний раз
   const flat = [];
@@ -47,15 +48,18 @@ let pollTimer = null, tick = 0;
 
 async function poll() {
   try {
-    const { presentation_index: i } = await PP('/v1/presentation/slide_index');
+    // P20 отдаёт null, когда ни один слайд не запущен — приводим к -1
+    const raw = (await PP('/v1/presentation/slide_index')).presentation_index;
+    const i = Number.isInteger(raw) ? raw : -1;
     setOnline(true);
     if (i !== state.idx) {
       state.idx = i;
       if (!state.pres) await loadActive(); else render();
     }
-    if (++tick % 4 === 0) { // реже: состояние экранов
+    if (++tick % 4 === 0) { // реже: состояние экранов + смена/открытие презентации
       state.screens = await PP('/v1/status/audience_screens');
       renderScreens();
+      await loadActive(); // внутри есть проверка по uuid — лишней перезагрузки нет
     }
   } catch (e) {
     if (String(e).includes('404')) { // ничего не запущено
@@ -72,7 +76,9 @@ function startPolling() {
 
 /* ── действия ──────────────────────────────────────────── */
 
-const trig = (path) => PP(`/v1/presentation/active/${path}`).then(poll).catch((e) => setOnline(false, e));
+// 404 от триггера — «нечего запускать», не авария связи; остальное зажигаем красным
+const trig = (path) => PP(`/v1/presentation/active/${path}`).then(poll)
+  .catch((e) => { if (!String(e).includes('404')) setOnline(false, e); });
 
 function goto(i) {
   if (i < 0 || i >= (state.pres?.flat.length || 0)) return;
@@ -80,7 +86,7 @@ function goto(i) {
   trig(`${i}/trigger`);
 }
 
-$('btnNext').onclick = () => goto(state.idx + 1) ?? null;
+$('btnNext').onclick = () => goto(state.idx < 0 ? 0 : state.idx + 1);
 $('btnPrev').onclick = () => goto(state.idx - 1) ?? null;
 
 $('btnBlack').onclick = () => {
@@ -108,35 +114,36 @@ function setOnline(ok, err) {
   }
 }
 
-function slideTitle(s, i) {
-  return s ? s.text.split('\n')[0].slice(0, 40) || '—' : `${i + 1}`;
-}
-
 function render() {
   const pres = state.pres;
   $('presName').textContent = pres ? pres.name : 'Ничего не запущено';
   const n = pres?.flat.length || 0;
-  $('slidePos').textContent = n ? `${state.idx + 1} / ${n}` : '';
-  if (!pres || state.idx < 0) {
+  $('slidePos').textContent = n && state.idx >= 0 ? `${state.idx + 1} / ${n}` : '';
+  if (!pres) {
     $('curGroup').textContent = '';
-    $('curImg').src = ''; $('curImg').hidden = true;
-    $('curText').textContent = 'Слайд не выбран';
-    $('nextImg').src = ''; $('nextImg').hidden = true;
+    $('curImg').removeAttribute('src'); $('curImg').hidden = true;
+    $('curText').textContent = '';
+    $('nextImg').removeAttribute('src'); $('nextImg').hidden = true;
     $('nextText').textContent = '';
     $('strip').replaceChildren();
     setOnline(state.ok);
     return;
   }
 
-  const cur = pres.flat[state.idx];
-  const next = pres.flat[state.idx + 1];
+  const cur = state.idx >= 0 ? pres.flat[state.idx] : null;
+  const next = pres.flat[state.idx + 1]; // при idx=-1 это первый слайд — его и запустит «Вперёд»
   $('curGroup').textContent = cur?.group || '';
   const curImg = $('curImg');
-  curImg.src = `/pp/v1/presentation/${pres.uuid}/thumbnail/${state.idx}?quality=640&thumbnail_type=jpeg`;
-  curImg.hidden = false;
-  curImg.onerror = () => { curImg.hidden = true; };
-  $('curText').textContent = cur ? cur.text : '';
-  $('curText').append(cur?.notes ? `\n📝 ${cur.notes}` : '');
+  if (cur) {
+    curImg.src = `/pp/v1/presentation/${pres.uuid}/thumbnail/${state.idx}?quality=640&thumbnail_type=jpeg`;
+    curImg.hidden = false;
+    curImg.onerror = () => { curImg.hidden = true; };
+    $('curText').textContent = cur.text;
+    $('curText').append(cur.notes ? `\n📝 ${cur.notes}` : '');
+  } else {
+    curImg.removeAttribute('src'); curImg.hidden = true;
+    $('curText').textContent = 'Слайд не выбран — нажми «Вперёд» или тапни по ленте';
+  }
 
   const nextImg = $('nextImg');
   if (next) {
