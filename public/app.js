@@ -391,7 +391,7 @@ function render() {
 
 function renderScreens() {
   $('btnBlack').classList.toggle('active', !state.screens);
-  $('btnBlack').textContent = state.screens ? '✦ Затемнить экран' : '◼ Экран затемнён — включить';
+  $('btnBlack').querySelector('span').textContent = state.screens ? 'Выключить экран' : 'Экран выключен — включить';
 }
 
 /* ── старт ─────────────────────────────────────────────── */

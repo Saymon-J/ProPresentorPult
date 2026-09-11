@@ -164,6 +164,19 @@ body {
   font-size: 14px;
 }
 .extra.active { color: #ffd24c; border-color: #ffd24c; }
+/* «Выключить экран» — как красная кнопка в ProPresenter */
+.extra.danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #a02020;
+  color: #fff;
+  border-color: #a02020;
+  font-weight: 600;
+}
+.extra.danger:active { filter: brightness(1.25); }
+.extra.danger.active { background: #e03030; border-color: #ff8a8a; box-shadow: 0 0 0 1px #ff8a8a; }
 
 /* ── нижние кнопки ─────────────────────── */
 #controls {
