@@ -153,7 +153,13 @@ body {
 .chip.now { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
 
 /* ── доп. кнопки ───────────────────────── */
-.extraRow { display: flex; gap: 8px; flex: none; padding-bottom: 4px; }
+.extraRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: none;
+  padding-bottom: 4px;
+}
 .extra {
   flex: 1;
   background: var(--card);

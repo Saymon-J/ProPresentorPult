@@ -44,7 +44,7 @@ function demoPresentation() {
 }
 
 function startMock(port = 50001) {
-  const state = { idx: 0, screens: true, cleared: false,
+  const state = { idx: 0, screens: true, cleared: false, mediaOn: true,
     look: { id: { uuid: 'LOOK-1', name: 'По умолчанию', index: 0 },
       screens: [{ video_input: true, media: true, slide: true, announcements: true, props: true, messages: true, presentation: '', mask: '' }] } };
   const pres = {
@@ -90,10 +90,15 @@ function startMock(port = 50001) {
       }
       return json(200, state.screens);
     }
+    if (p === '/v1/status/layers') return json(200, {
+      video_input: false, media: state.mediaOn, slide: !state.cleared,
+      announcements: false, props: false, messages: false, audio: false,
+    });
+    if (p === '/v1/clear/layer/media') { state.mediaOn = false; res.writeHead(204); return res.end(); }
     if (p === '/v1/clear/layer/slide') { state.cleared = true; res.writeHead(204); return res.end(); }
 
     let m;
-    const unClear = () => { state.cleared = false; };
+    const unClear = () => { state.cleared = false; state.mediaOn = true; };
     if (p === '/v1/libraries') return json(200, LIBS);
     if (p === '/v1/playlists') return json(200, PLAYLISTS);
     if ((m = p.match(/^\/v1\/library\/([^/]+)$/))) {

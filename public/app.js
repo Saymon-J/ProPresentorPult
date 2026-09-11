@@ -78,7 +78,7 @@ async function poll() {
     state.live = live;
     render();
     state.statusNext = norm(st?.next?.text || '');
-    if (++tick % 4 === 0) {     // реже: экраны + обновление колоды
+    if (++tick % 4 === 0) {     // реже: экраны, обновление колоды
       state.screens = await PP('/v1/status/audience_screens');
       renderScreens();
       await loadActive();
@@ -138,6 +138,10 @@ $('btnBlack').onclick = () => {
 };
 
 $('btnClear').onclick = () => PP('/v1/clear/layer/slide').then(poll).catch((e) => setOnline(false, e));
+
+// «Убрать фон» как в ProPresenter: очищает media-слой (текст остаётся).
+// Фон вернёт следующий слайд или «Вперёд» — повторный клик безвреден.
+$('btnBg').onclick = () => PP('/v1/clear/layer/media').catch((e) => setOnline(false, e));
 
 /* ── слои и зал ────────────────────────────────────────── */
 

@@ -98,7 +98,19 @@ const { startServer } = require('../server');
   look2.screens.forEach((s) => { s.slide = true; });
   await get('/pp/v1/look/current', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(look2) });
 
-  console.log('SMOKE OK: 14/14 проверок прошли');
+  // 15. убрать фон: media-слой гаснет, слайд остаётся; триггер возвращает фон
+  await get('/pp/v1/presentation/DEMO-0000-0001/1/trigger');
+  let layers = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/layers')).body));
+  assert.equal(layers.media, true);
+  assert.equal((await get('/pp/v1/clear/layer/media')).status, 204);
+  layers = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/layers')).body));
+  assert.equal(layers.media, false, 'после очистки media-слой должен погаснуть');
+  assert.equal(layers.slide, true, 'слой слайда должен остаться');
+  await get('/pp/v1/presentation/DEMO-0000-0001/1/trigger');
+  layers = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/layers')).body));
+  assert.equal(layers.media, true, 'повторный триггер возвращает фон');
+
+  console.log('SMOKE OK: 15/15 проверок прошли');
   mock.server.close(); srv.close();
   process.exit(0);
 })().catch((e) => { console.error('SMOKE FAIL:', e.message); process.exit(1); });
