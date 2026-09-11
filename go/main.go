@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bufio"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -228,7 +229,14 @@ func main() {
 		log.Printf("ProPresenter не найден (порты %s) — продолжу попытки при запросах", *ppPorts)
 	}
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		log.Printf("Не удалось запуститься на %s: %v", addr, err)
+		log.Println("Чаще всего порт занят другим запущенным пультом (Node-версия или второй экземпляр).")
+		log.Println("Запусти на другом порту, например: pult -port 8081")
+		// при двойном клике окно консоли закрывается мгновенно — даём прочитать ошибку
+		if st, err := os.Stdin.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+			log.Println("(Нажми Enter, чтобы закрыть…)")
+			bufio.NewReader(os.Stdin).ReadString('\n')
+		}
 		os.Exit(1)
 	}
 }
