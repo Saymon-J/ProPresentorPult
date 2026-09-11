@@ -57,7 +57,25 @@ const { startServer } = require('../server');
   assert.equal(act.presentation.groups.length, 3);
   assert.ok(act.presentation.groups[0].slides[0].text.length > 0);
 
-  console.log('SMOKE OK: 8/8 проверок прошли');
+  // 9. библиотеки: список и содержимое
+  const libs = JSON.parse(new TextDecoder().decode((await get('/pp/v1/libraries')).body));
+  assert.ok(libs.some((l) => l.name === 'ПесниNew'));
+  const libItems = JSON.parse(new TextDecoder().decode((await get('/pp/v1/library/LIB-SONGS')).body));
+  assert.equal(libItems.items[0].uuid, 'DEMO-0000-0001');
+
+  // 10. запуск презентации из библиотеки
+  assert.equal((await get('/pp/v1/library/LIB-SONGS/DEMO-0000-0001/trigger')).status, 204);
+  cur = JSON.parse(new TextDecoder().decode((await get('/pp/v1/status/slide')).body));
+  assert.equal(cur.current.text, 'Милость превыше суда\nБольше, чем я вижу');
+
+  // 11. плейлисты: список, содержимое, запуск по индексу
+  const pls = JSON.parse(new TextDecoder().decode((await get('/pp/v1/playlists')).body));
+  assert.equal(pls[0].id.name, 'По умолчанию');
+  const plItems = JSON.parse(new TextDecoder().decode((await get('/pp/v1/playlist/PL-1')).body));
+  assert.equal(plItems.items[0].target_uuid, 'DEMO-0000-0001');
+  assert.equal((await get('/pp/v1/playlist/PL-1/0/trigger')).status, 204);
+
+  console.log('SMOKE OK: 11/11 проверок прошли');
   mock.server.close(); srv.close();
   process.exit(0);
 })().catch((e) => { console.error('SMOKE FAIL:', e.message); process.exit(1); });

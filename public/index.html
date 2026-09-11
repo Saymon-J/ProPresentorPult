@@ -18,6 +18,7 @@
     <span id="dot" class="off" title="Соединение"></span>
     <div id="presName">Подключение…</div>
     <div id="slidePos"></div>
+    <button id="btnLib" title="Библиотеки и плейлисты">🗂</button>
   </header>
 
   <main id="setupHint" hidden>
@@ -55,6 +56,19 @@
     <button id="btnPrev">‹ Назад</button>
     <button id="btnNext" class="primary">Вперёд ›</button>
   </footer>
+
+  <div id="picker" hidden>
+    <div class="pkHead">
+      <button id="pkBack" hidden>‹</button>
+      <div id="pkTitle">Библиотека</div>
+      <button id="pkClose">✕</button>
+    </div>
+    <div class="pkTabs">
+      <button id="tabLib" class="on">Библиотеки</button>
+      <button id="tabPl">Плейлисты</button>
+    </div>
+    <div id="pkList"><div class="pkEmpty">Загрузка…</div></div>
+  </div>
 
   <script src="app.js"></script>
 </body>

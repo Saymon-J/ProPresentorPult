@@ -50,6 +50,12 @@ function startMock(port = 50001) {
     name: 'Демо-песня', groups: demoPresentation(), has_timeline: false, destination: 'presentation',
   };
   const flat = pres.groups.flatMap((g) => g.slides);
+  const LIBS = [
+    { uuid: 'LIB-DEFAULT', name: 'Default', index: 0 },
+    { uuid: 'LIB-SONGS', name: 'ПесниNew', index: 1 },
+  ];
+  const LIB_ITEMS = { 'LIB-SONGS': [{ uuid: 'DEMO-0000-0001', name: 'Демо-песня', index: 0 }] };
+  const PLAYLISTS = [{ id: { uuid: 'PL-1', name: 'По умолчанию', index: 0 }, field_type: 'playlist', children: [] }];
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
@@ -76,6 +82,23 @@ function startMock(port = 50001) {
     if (p === '/v1/clear/layer/slide') { res.writeHead(204); return res.end(); }
 
     let m;
+    if (p === '/v1/libraries') return json(200, LIBS);
+    if (p === '/v1/playlists') return json(200, PLAYLISTS);
+    if ((m = p.match(/^\/v1\/library\/([^/]+)$/))) {
+      return json(200, { update_type: 'all', items: LIB_ITEMS[m[1]] || [] });
+    }
+    if ((m = p.match(/^\/v1\/playlist\/([^/]+)$/))) {
+      return json(200, {
+        id: { uuid: m[1], name: 'По умолчанию', index: 0 },
+        items: [{ id: { name: 'Демо-песня', index: 0, uuid: 'PLI-1' }, type: 'presentation', target_uuid: 'DEMO-0000-0001' }],
+      });
+    }
+    if ((m = p.match(/^\/v1\/library\/([^/]+)\/([^/]+)\/trigger$/))) {
+      state.idx = 0; res.writeHead(204); return res.end();
+    }
+    if ((m = p.match(/^\/v1\/playlist\/([^/]+)\/(\d+)\/trigger$/))) {
+      state.idx = 0; res.writeHead(204); return res.end();
+    }
     if (p === '/v1/presentation/active/next/trigger') { state.idx = Math.min(state.idx + 1, flat.length - 1); res.writeHead(204); return res.end(); }
     if (p === '/v1/presentation/active/previous/trigger') { state.idx = Math.max(state.idx - 1, 0); res.writeHead(204); return res.end(); }
     if ((m = p.match(/^\/v1\/presentation\/active\/(\d+)\/trigger$/))) {

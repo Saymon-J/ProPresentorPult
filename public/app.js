@@ -125,6 +125,108 @@ $('btnBlack').onclick = () => {
 
 $('btnClear').onclick = () => PP('/v1/clear/layer/slide').then(poll).catch((e) => setOnline(false, e));
 
+/* ── выбор презентации: библиотеки и плейлисты ─────────── */
+
+const picker = { tab: 'lib', openId: null, openName: '' };
+
+const thumb0 = (uuid) => `/pp/v1/presentation/${uuid}/thumbnail/0?quality=96&thumbnail_type=jpeg`;
+
+function pkRow({ ico, name, uuid, dim, action }) {
+  const b = document.createElement('button');
+  b.className = 'pkRow' + (dim ? ' dim' : '');
+  b.innerHTML = (uuid ? `<img src="${thumb0(uuid)}" alt="" loading="lazy" onerror="this.remove()">`
+    : `<span class="ico">${ico || '📁'}</span>`) + `<span class="nm"></span>`;
+  b.querySelector('.nm').textContent = name;
+  b.onclick = action;
+  return b;
+}
+
+function pkRender(rows, title, backAction) {
+  const list = $('pkList');
+  list.replaceChildren(...rows);
+  $('pkTitle').textContent = title;
+  $('pkBack').hidden = !backAction;
+  $('pkBack').onclick = backAction || null;
+}
+
+async function pkLoad() {
+  const list = $('pkList');
+  list.innerHTML = '<div class="pkEmpty">Загрузка…</div>';
+  try {
+    if (picker.tab === 'lib') {
+      if (picker.openId) return await pkLibItems(picker.openId, picker.openName);
+      const libs = await PP('/v1/libraries');
+      pkRender(libs.map((l) => pkRow({
+        name: l.name, action: () => { picker.openId = l.uuid; picker.openName = l.name; pkLoad(); },
+      })), 'Библиотека');
+    } else {
+      if (picker.openId) return await pkPlaylistItems(picker.openId, picker.openName);
+      const pls = await PP('/v1/playlists');
+      pkRender(pls.map((p) => pkRow({
+        name: p.id?.name ?? p.name, action: () => { picker.openId = p.id?.uuid ?? p.uuid; picker.openName = p.id?.name ?? p.name; pkLoad(); },
+      })), 'Плейлисты');
+    }
+  } catch (e) {
+    list.innerHTML = '<div class="pkEmpty">Не удалось загрузить</div>';
+    setOnline(false, e);
+  }
+}
+
+async function pkLibItems(libUuid, libName) {
+  const { items } = await PP(`/v1/library/${libUuid}`);
+  pkRender((items || []).map((it) => pkRow({
+    name: it.name, uuid: it.uuid,
+    action: () => pkLaunch(`/v1/library/${libUuid}/${it.uuid}/trigger`),
+  })), libName, () => { picker.openId = null; pkLoad(); });
+}
+
+// элементы плейлиста: группы разворачиваем в плоский список с подзаголовками
+function flattenPlaylist(items, out = []) {
+  for (const it of items || []) {
+    if (it.type === 'group') {
+      out.push({ head: (it.id?.name ?? it.name) || 'Группа' });
+      flattenPlaylist(it.items || it.children || [], out);
+    } else out.push({ item: it });
+  }
+  return out;
+}
+
+async function pkPlaylistItems(plUuid, plName) {
+  const body = await PP(`/v1/playlist/${plUuid}`);
+  const flat = flattenPlaylist(body.items);
+  const rows = flat.map((e) => e.head
+    ? Object.assign(document.createElement('div'), { className: 'pkGroup', textContent: e.head })
+    : pkRow({
+      name: e.item.id?.name ?? e.item.name,
+      uuid: e.item.target_uuid || e.item.presentation_info?.presentation_uuid,
+      dim: e.item.type !== 'presentation',
+      action: e.item.type === 'presentation'
+        ? () => pkLaunch(`/v1/playlist/${plUuid}/${e.item.id?.index ?? e.item.index}/trigger`)
+        : null,
+    }));
+  pkRender(rows, plName, () => { picker.openId = null; pkLoad(); });
+}
+
+async function pkLaunch(path) {
+  try { await PP(path); } catch (e) { if (!String(e).includes('404')) setOnline(false, e); }
+  closePicker();
+  await poll(); // сразу подтянуть запущенное
+}
+
+function closePicker() {
+  $('picker').hidden = true;
+  picker.openId = null;
+}
+
+$('btnLib').onclick = () => { $('picker').hidden = false; pkLoad(); };
+$('pkClose').onclick = closePicker;
+$('tabLib').onclick = () => { picker.tab = 'lib'; picker.openId = null; pkSetTabs(); pkLoad(); };
+$('tabPl').onclick = () => { picker.tab = 'pl'; picker.openId = null; pkSetTabs(); pkLoad(); };
+function pkSetTabs() {
+  $('tabLib').classList.toggle('on', picker.tab === 'lib');
+  $('tabPl').classList.toggle('on', picker.tab === 'pl');
+}
+
 /* ── отрисовка ─────────────────────────────────────────── */
 
 function setOnline(ok, err) {

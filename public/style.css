@@ -47,6 +47,15 @@ body {
   flex: 1;
 }
 #slidePos { color: var(--dim); font-variant-numeric: tabular-nums; flex: none; }
+#btnLib {
+  flex: none;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 17px;
+  padding: 4px 9px;
+}
 
 /* ── содержимое ────────────────────────── */
 #ui, #setupHint {
@@ -167,3 +176,72 @@ body {
 }
 #controls button:active { filter: brightness(1.3); }
 #controls .primary { background: var(--accent); color: #fff; }
+
+/* ── пикер библиотек/плейлистов ─────────── */
+#picker {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+}
+.pkHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px var(--pad);
+  border-bottom: 1px solid var(--line);
+}
+.pkHead > div { flex: 1; font-weight: 600; }
+.pkHead button {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 18px;
+  padding: 4px 12px;
+}
+.pkTabs { display: flex; gap: 8px; padding: 10px var(--pad); flex: none; }
+.pkTabs button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--dim);
+}
+.pkTabs button.on { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+#pkList { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 var(--pad) 20px; }
+.pkEmpty, .pkGroup { color: var(--dim); font-size: 13px; padding: 14px 4px 6px; text-transform: uppercase; letter-spacing: .04em; }
+.pkRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 6px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+}
+.pkRow:active { background: var(--card); }
+.pkRow .ico { font-size: 20px; flex: none; width: 24px; text-align: center; }
+.pkRow img {
+  flex: none;
+  height: 40px;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #000;
+  border-radius: 4px;
+}
+.pkRow .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pkRow.dim { color: var(--dim); }
